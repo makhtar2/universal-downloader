@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniDownloader - Téléchargeur Vidéo Universel</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#6366f1">
+    <link rel="apple-touch-icon" href="/static/icon.png">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome for Premium Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom Style -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Background Glows for Premium Aesthetics -->
+    <div class="glow-bg glow-purple"></div>
+    <div class="glow-bg glow-blue"></div>
+
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="logo-area">
+                <i class="fa-solid fa-cloud-arrow-down main-logo-icon"></i>
+                <h1>Omni<span>Downloader</span></h1>
+            </div>
+            <p class="subtitle">Téléchargez vos vidéos préférées depuis n'importe quelle plateforme en haute qualité.</p>
+            
+            <!-- Supported Platforms Badges -->
+            <div class="platform-badges">
+                <span class="badge badge-youtube"><i class="fa-brands fa-youtube"></i> YouTube</span>
+                <span class="badge badge-instagram"><i class="fa-brands fa-instagram"></i> Instagram</span>
+                <span class="badge badge-tiktok"><i class="fa-brands fa-tiktok"></i> TikTok</span>
+                <span class="badge badge-x"><i class="fa-brands fa-x-twitter"></i> Twitter/X</span>
+                <span class="badge badge-linkedin"><i class="fa-brands fa-linkedin"></i> LinkedIn</span>
+                <span class="badge badge-facebook"><i class="fa-brands fa-facebook"></i> Facebook</span>
+            </div>
+        </header>
+
+        <!-- Main Card Interface -->
+        <main>
+            <!-- Search & Input Section -->
+            <div class="card glass-card search-card">
+                <div class="input-section">
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-link input-icon"></i>
+                        <input type="text" id="urlInput" placeholder="Collez le lien de la vidéo ici (YouTube, TikTok, Instagram...)" autocomplete="off">
+                        <!-- Dynamic platform indicator badge -->
+                        <span id="detectedPlatform" class="detected-badge hidden">
+                            <span class="dot"></span>
+                            <span class="text">YouTube</span>
+                        </span>
+                    </div>
+                    <button id="fetchBtn" class="btn primary-btn">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Analyser
+                    </button>
+                </div>
+
+                <!-- Advanced Options Accordion -->
+                <div class="advanced-options">
+                    <button id="advancedToggleBtn" class="advanced-toggle">
+                        <i class="fa-solid fa-sliders"></i> Options avancées <i class="fa-solid fa-chevron-down" id="advancedChevron"></i>
+                    </button>
+                    <div id="advancedContent" class="advanced-content hidden">
+                        <div class="advanced-grid">
+                            <div class="option-field">
+                                <label for="formatSelect"><i class="fa-solid fa-film"></i> Format & Qualité</label>
+                                <div class="select-wrapper">
+                                    <select id="formatSelect" class="custom-select">
+                                        <option value="best">Meilleure Qualité (Auto)</option>
+                                        <option value="2160">4K Ultra HD (2160p)</option>
+                                        <option value="1080">Full HD (1080p)</option>
+                                        <option value="720">HD (720p)</option>
+                                        <option value="480">SD (480p)</option>
+                                        <option value="audio">Audio MP3 (Haute Qualité)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="option-field">
+                                <label for="convertSelect"><i class="fa-solid fa-rotate"></i> Conversion</label>
+                                <div class="select-wrapper">
+                                    <select id="convertSelect" class="custom-select">
+                                        <option value="none">Format d'origine (Recommandé)</option>
+                                        <option value="mp4">Forcer MP4</option>
+                                        <option value="mkv">Forcer MKV</option>
+                                        <option value="webm">Forcer WebM</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loader Status -->
+            <div id="loadingInfo" class="hidden glass-card info-loader">
+                <div class="loader-visual">
+                    <div class="pulse-ring"></div>
+                    <i class="fa-solid fa-compass-drafting loader-icon"></i>
+                </div>
+                <h3>Analyse en cours...</h3>
+                <p>Récupération des métadonnées et des flux disponibles depuis les serveurs.</p>
+            </div>
+
+            <!-- Video Info Preview Card -->
+            <div id="videoInfoCard" class="card glass-card info-card hidden">
+                <div class="info-layout">
+                    <div class="video-thumbnail-container">
+                        <img id="thumbImg" src="" alt="Aperçu vidéo">
+                        <span class="duration-tag" id="videoDuration">00:00</span>
+                        <div class="play-overlay">
+                            <i class="fa-solid fa-play"></i>
+                        </div>
+                    </div>
+                    <div class="video-details-container">
+                        <span class="platform-indicator-tag" id="videoPlatformTag"><i class="fa-brands fa-youtube"></i> YouTube</span>
+                        <h2 id="videoTitle">Chargement du titre de la vidéo...</h2>
+                        <div class="video-creator">
+                            <i class="fa-solid fa-circle-user"></i>
+                            <span id="videoChannel">Auteur inconnu</span>
+                        </div>
+
+                        <!-- Playlist Items if it's a Playlist Link -->
+                        <div id="playlistSection" class="playlist-section hidden">
+                            <div class="playlist-header">
+                                <h3><i class="fa-solid fa-list-check"></i> Vidéos de la Playlist</h3>
+                                <div class="playlist-actions">
+                                    <button id="selectAllBtn"><i class="fa-regular fa-square-check"></i> Tout</button>
+                                    <button id="deselectAllBtn"><i class="fa-regular fa-square"></i> Aucun</button>
+                                </div>
+                            </div>
+                            <div id="playlistItems" class="playlist-items-list">
+                                <!-- Generated Dynamically -->
+                            </div>
+                        </div>
+
+                        <button id="downloadBtn" class="btn download-btn">
+                            <i class="fa-solid fa-download"></i> Démarrer le téléchargement
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Card -->
+            <div id="progressSection" class="card glass-card progress-card hidden">
+                <div class="progress-header-info">
+                    <div class="progress-title-status">
+                        <h3><i class="fa-solid fa-circle-notch fa-spin"></i> <span id="progressStatus">Téléchargement en cours...</span></h3>
+                    </div>
+                    <div class="progress-number-percentage">
+                        <span id="progressPercentage">0%</span>
+                    </div>
+                </div>
+                
+                <div class="progress-track">
+                    <div id="progressBar" class="progress-fill"></div>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-title"><i class="fa-solid fa-gauge-high"></i> Vitesse</span>
+                        <span id="progressSpeed" class="stat-value">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-title"><i class="fa-regular fa-clock"></i> Estimation</span>
+                        <span id="progressEta" class="stat-value">--</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Success Status Message -->
+            <div id="successMessage" class="hidden alert-msg alert-success">
+                <div class="alert-icon"><i class="fa-solid fa-circle-check"></i></div>
+                <div class="alert-content">
+                    <h4>Téléchargement Réussi !</h4>
+                    <p>Votre fichier a été généré et son téléchargement a démarré dans votre navigateur.</p>
+                </div>
+            </div>
+            
+            <!-- Error Status Message -->
+            <div id="errorMessage" class="hidden alert-msg alert-danger">
+                <div class="alert-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div class="alert-content">
+                    <h4>Une erreur est survenue</h4>
+                    <p id="errorText">Impossible d'analyser ou de télécharger cette vidéo. Vérifiez le lien ou réessayez.</p>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Footer & Admin Section -->
+        <footer>
+            <p>Développé avec <i class="fa-solid fa-heart" style="color: #ef4444;"></i>. Hébergement gratuit et open-source.</p>
+            <div class="admin-controls">
+                <button id="updateYtdlpBtn" class="btn-text-link">
+                    <i class="fa-solid fa-rotate"></i> Mettre à jour les extracteurs (yt-dlp)
+                </button>
+                <span id="updateStatusText" class="update-status-text"></span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Script -->
+    <script src="/static/app.js"></script>
+</body>
+</html>

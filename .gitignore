@@ -1,0 +1,20 @@
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Downloads directory files
+downloads/*
+!downloads/.gitkeep
+
+# System files
+.DS_Store
+Thumbs.db

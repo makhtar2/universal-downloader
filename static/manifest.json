@@ -1,0 +1,18 @@
+{
+  "name": "OmniDownloader - Téléchargeur Vidéo Universel",
+  "short_name": "OmniDownloader",
+  "description": "Téléchargez facilement des vidéos depuis YouTube, Instagram, TikTok, Twitter/X, LinkedIn et d'autres plateformes.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#6366f1",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/static/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

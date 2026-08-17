@@ -10,6 +10,7 @@ import shutil
 import urllib.parse
 import subprocess
 import secrets
+import base64
 from fastapi import FastAPI, Header, HTTPException, Request, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -22,6 +23,24 @@ app = FastAPI(title="OmniDownloader API", version="2.0.0")
 # Secret required to call admin endpoints. Unset by default so the endpoint
 # fails closed (403) instead of being open to anyone.
 ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY")
+
+# YouTube (and some other sites) started requiring a logged-in session to
+# serve certain videos ("Sign in to confirm you're not a bot"). We support
+# passing cookies two ways:
+# - COOKIES_FILE: path to a cookies.txt already present on disk (local dev).
+# - YTDLP_COOKIES_B64: base64-encoded cookies.txt content, decoded to disk
+#   at startup (used in deployment, so the raw file never has to be committed).
+COOKIES_PATH = os.environ.get("COOKIES_FILE", "cookies.txt")
+if os.environ.get("YTDLP_COOKIES_B64"):
+    try:
+        with open(COOKIES_PATH, "wb") as f:
+            f.write(base64.b64decode(os.environ["YTDLP_COOKIES_B64"]))
+        print(f"[Startup] Wrote cookies file from YTDLP_COOKIES_B64 to {COOKIES_PATH}")
+    except Exception as e:
+        print(f"[Startup] Failed to decode YTDLP_COOKIES_B64: {e}")
+
+def cookie_opts() -> dict:
+    return {"cookiefile": COOKIES_PATH} if os.path.isfile(COOKIES_PATH) else {}
 
 def validate_url(url: str) -> None:
     parsed = urllib.parse.urlparse(url)
@@ -167,6 +186,7 @@ def download_worker(task_id: str, req: DownloadRequest):
         # download URLs. yt-dlp only enables 'deno' by default, which isn't
         # installed here, causing every download to fail with HTTP 403.
         'js_runtimes': {'node': {}},
+        **cookie_opts(),
     }
     
     if req.playlist_items:
@@ -244,6 +264,7 @@ def get_video_info(request: InfoRequest):
         'extract_flat': True,
         'js_runtimes': {'node': {}},
         'skip_download': True,
+        **cookie_opts(),
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

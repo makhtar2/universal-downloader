@@ -18,3 +18,6 @@ downloads/*
 # System files
 .DS_Store
 Thumbs.db
+
+# yt-dlp auth cookies (never commit real session cookies)
+cookies.txt

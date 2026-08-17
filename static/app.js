@@ -337,16 +337,33 @@ document.addEventListener('DOMContentLoaded', () => {
         updateStatusText.innerText = ' Vérification des mises à jour...';
 
         try {
-            const response = await fetch('/api/admin/update-ytdlp', {
-                method: 'POST'
+            let adminKey = localStorage.getItem('admin_api_key') || '';
+            let response = await fetch('/api/admin/update-ytdlp', {
+                method: 'POST',
+                headers: adminKey ? { 'X-Admin-Key': adminKey } : {}
             });
+
+            // This action is protected server-side. Ask for the key once and
+            // remember it locally for next time.
+            if (response.status === 403) {
+                adminKey = window.prompt('Clé admin requise pour cette action :') || '';
+                if (!adminKey) {
+                    throw new Error('Clé admin requise.');
+                }
+                localStorage.setItem('admin_api_key', adminKey);
+                response = await fetch('/api/admin/update-ytdlp', {
+                    method: 'POST',
+                    headers: { 'X-Admin-Key': adminKey }
+                });
+            }
+
             const data = await response.json();
-            
+
             if (response.ok && data.status === 'success') {
                 updateStatusText.classList.add('success');
                 updateStatusText.innerHTML = ' <i class="fa-solid fa-circle-check"></i> Extracteur mis à jour avec succès !';
             } else {
-                throw new Error(data.message || 'Erreur inconnue.');
+                throw new Error(data.message || data.detail || 'Erreur inconnue.');
             }
         } catch (error) {
             updateStatusText.classList.add('error');

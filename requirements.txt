@@ -1,5 +1,7 @@
-fastapi
-uvicorn
-pydantic
+fastapi==0.141.1
+uvicorn==0.52.1
+pydantic==2.13.4
+sse-starlette==3.4.8
+# yt-dlp is deliberately left unpinned: the app upgrades it on startup and
+# via /api/admin/update-ytdlp to keep pace with site extractor changes.
 yt-dlp
-sse-starlette

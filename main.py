@@ -9,7 +9,8 @@ import time
 import shutil
 import urllib.parse
 import subprocess
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+import secrets
+from fastapi import FastAPI, Header, HTTPException, Request, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,11 +19,30 @@ from sse_starlette.sse import EventSourceResponse
 
 app = FastAPI(title="OmniDownloader API", version="2.0.0")
 
-# Enable CORS for development
+# Secret required to call admin endpoints. Unset by default so the endpoint
+# fails closed (403) instead of being open to anyone.
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY")
+
+def validate_url(url: str) -> None:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("URL invalide : seuls les liens http/https sont acceptés.")
+
+def public_error_message(e: Exception, fallback: str) -> str:
+    """Most yt-dlp errors are safe, user-readable strings (e.g. "Video
+    unavailable"), so we forward them as-is. Anything that looks like it
+    leaked internals (a local path or a traceback) is replaced by a generic
+    message instead; the real exception is always logged server-side."""
+    msg = str(e)
+    if os.getcwd() in msg or "Traceback" in msg or 'File "' in msg:
+        return fallback
+    return msg
+
+# Enable CORS for development. No cookies/sessions are used, so
+# allow_credentials stays off (it's also invalid combined with a wildcard origin).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -30,7 +50,7 @@ app.add_middleware(
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-# In-memory storage for progress queues
+# In-memory storage for progress queues: task_id -> {"queue": Queue, "created": float}
 download_tasks = {}
 
 class InfoRequest(BaseModel):
@@ -60,6 +80,17 @@ def cleanup_worker():
                         else:
                             os.remove(item_path)
                         print(f"[Cleanup] Deleted expired download: {item}")
+
+            # Prune orphaned progress queues (e.g. client never polled /api/progress)
+            # so download_tasks doesn't grow unbounded in memory.
+            stale_ids = [
+                tid for tid, info in download_tasks.items()
+                if now - info["created"] > max_age
+            ]
+            for tid in stale_ids:
+                download_tasks.pop(tid, None)
+            if stale_ids:
+                print(f"[Cleanup] Pruned {len(stale_ids)} stale progress task(s)")
         except Exception as e:
             print(f"[Cleanup] Error in cleanup worker: {e}")
         # Run cleanup every 10 minutes
@@ -87,7 +118,14 @@ def upgrade_ytdlp():
 threading.Thread(target=upgrade_ytdlp, daemon=True).start()
 
 def download_worker(task_id: str, req: DownloadRequest):
-    q = download_tasks[task_id]
+    q = download_tasks[task_id]["queue"]
+
+    try:
+        validate_url(req.url)
+    except ValueError as e:
+        q.put({"status": "error", "message": str(e)})
+        return
+
     target_dir = os.path.join(DOWNLOAD_DIR, task_id)
     os.makedirs(target_dir, exist_ok=True)
     
@@ -125,6 +163,10 @@ def download_worker(task_id: str, req: DownloadRequest):
         'progress_hooks': [progress_hook],
         'nocheckcertificate': True,
         'restrictfilenames': True,  # Keep filenames web-safe (no spaces, special chars)
+        # YouTube now requires solving a JS challenge (signature/n-param) to get
+        # download URLs. yt-dlp only enables 'deno' by default, which isn't
+        # installed here, causing every download to fail with HTTP 403.
+        'js_runtimes': {'node': {}},
     }
     
     if req.playlist_items:
@@ -183,14 +225,24 @@ def download_worker(task_id: str, req: DownloadRequest):
                 })
                 
     except Exception as e:
-        q.put({"status": "error", "message": str(e)})
+        print(f"[Error] download failed for task {task_id} ({req.url}): {e}")
+        q.put({
+            "status": "error",
+            "message": public_error_message(e, "Le téléchargement a échoué. Vérifiez le lien ou réessayez plus tard."),
+        })
 
 @app.post("/api/info")
 def get_video_info(request: InfoRequest):
+    try:
+        validate_url(request.url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     ydl_opts = {
-        'nocheckcertificate': True, 
-        'quiet': True, 
+        'nocheckcertificate': True,
+        'quiet': True,
         'extract_flat': True,
+        'js_runtimes': {'node': {}},
         'skip_download': True,
     }
     try:
@@ -241,39 +293,48 @@ def get_video_info(request: InfoRequest):
                     "platform": platform
                 }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"[Error] /api/info failed for {request.url}: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=public_error_message(e, "Impossible de récupérer les informations de cette vidéo."),
+        )
 
 @app.post("/api/download")
 def start_download(request: DownloadRequest):
     task_id = str(uuid.uuid4())
-    download_tasks[task_id] = queue.Queue()
-    
+    download_tasks[task_id] = {"queue": queue.Queue(), "created": time.time()}
+
     t = threading.Thread(target=download_worker, args=(task_id, request))
     t.start()
-    
+
     return {"task_id": task_id}
 
 @app.get("/api/progress")
 async def download_progress(request: Request, task_id: str):
     if task_id not in download_tasks:
         raise HTTPException(status_code=404, detail="Tâche introuvable")
-        
-    q = download_tasks[task_id]
-    
+
+    q = download_tasks[task_id]["queue"]
+
     async def event_generator():
-        while True:
-            if await request.is_disconnected():
-                break
-                
-            try:
-                data = q.get_nowait()
-                yield {"data": json.dumps(data)}
-                
-                if data["status"] in ["completed", "error"]:
+        try:
+            while True:
+                if await request.is_disconnected():
                     break
-            except queue.Empty:
-                await asyncio.sleep(0.2)
-                
+
+                try:
+                    data = q.get_nowait()
+                    yield {"data": json.dumps(data)}
+
+                    if data["status"] in ["completed", "error"]:
+                        break
+                except queue.Empty:
+                    await asyncio.sleep(0.2)
+        finally:
+            # Free the queue once the stream ends, whether it finished
+            # normally or the client disconnected early.
+            download_tasks.pop(task_id, None)
+
     return EventSourceResponse(event_generator())
 
 # Serve the downloaded files
@@ -288,10 +349,16 @@ def download_file(task_id: str, filename: str, background_tasks: BackgroundTasks
     else:
         file_path = os.path.join(DOWNLOAD_DIR, task_id, filename)
         dir_path = os.path.join(DOWNLOAD_DIR, task_id)
-        
+
+    # Reject any path that escapes DOWNLOAD_DIR (path traversal via filename/task_id)
+    download_root = os.path.realpath(DOWNLOAD_DIR)
+    real_file_path = os.path.realpath(file_path)
+    if os.path.commonpath([real_file_path, download_root]) != download_root:
+        raise HTTPException(status_code=400, detail="Chemin de fichier invalide.")
+
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Le fichier n'existe pas ou a expiré.")
-        
+
     def cleanup():
         try:
             # Let the response complete, wait a brief moment, then cleanup
@@ -313,7 +380,9 @@ def download_file(task_id: str, filename: str, background_tasks: BackgroundTasks
 
 # Admin endpoint to trigger manual update of yt-dlp
 @app.post("/api/admin/update-ytdlp")
-def manual_update_ytdlp():
+def manual_update_ytdlp(x_admin_key: str | None = Header(default=None)):
+    if not ADMIN_API_KEY or not secrets.compare_digest(x_admin_key or "", ADMIN_API_KEY):
+        raise HTTPException(status_code=403, detail="Accès refusé.")
     try:
         result = subprocess.run(
             ["pip", "install", "--upgrade", "yt-dlp"],
